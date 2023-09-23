@@ -119,13 +119,24 @@ static int volkswagen_mqb_rx_hook(CANPacket_t *to_push) {
     if (addr == MSG_TSK_06) {
       int acc_status = (GET_BYTE(to_push, 3) & 0x7U);
       int cruise_engaged = ((acc_status == 3) || (acc_status == 4) || (acc_status == 5)) ? 1 : 0;
+      acc_main_on = ((acc_status == 2) || (acc_status == 3) || (acc_status == 4) || (acc_status == 5)) ? true : false;
       if (cruise_engaged && !cruise_engaged_prev) {
         controls_allowed = 1;
+        controls_allowed_long = 1;
       }
       if (!cruise_engaged) {
-        controls_allowed = 0;
+        controls_allowed_long = 0;
       }
       cruise_engaged_prev = cruise_engaged;
+
+      if (acc_main_on && ((alternative_experience & ALT_EXP_ENABLE_MADS) || (alternative_experience & ALT_EXP_MADS_DISABLE_DISENGAGE_LATERAL_ON_BRAKE))) {
+        controls_allowed = 1;
+      }
+      if (!acc_main_on) {
+        disengageFromBrakes = false;
+        controls_allowed = 0;
+        controls_allowed_long = 0;
+      }
     }
 
     // Signal: Motor_20.MO_Fahrpedalrohwert_01
@@ -206,7 +217,7 @@ static int volkswagen_mqb_tx_hook(CANPacket_t *to_send, bool longitudinal_allowe
 
   // FORCE CANCEL: ensuring that only the cancel button press is sent when controls are off.
   // This avoids unintended engagements while still allowing resume spam
-  if ((addr == MSG_GRA_ACC_01) && !controls_allowed) {
+  if ((addr == MSG_GRA_ACC_01) && !controls_allowed_long) {
     // disallow resume and set: bits 16 and 19
     if ((GET_BYTE(to_send, 2) & 0x9U) != 0U) {
       tx = 0;
