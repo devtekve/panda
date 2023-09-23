@@ -7,6 +7,7 @@ const int HYUNDAI_PARAM_LONGITUDINAL = 4;
 const int HYUNDAI_PARAM_CAMERA_SCC = 8;
 const int HYUNDAI_PARAM_CANFD_HDA2 = 16;
 const int HYUNDAI_PARAM_ALT_LIMITS = 64; // TODO: shift this down with the rest of the common flags
+const int HYUNDAI_PARAM_ESCC = 512;
 
 const uint8_t HYUNDAI_PREV_BUTTON_SAMPLES = 8;  // roughly 160 ms
 const uint32_t HYUNDAI_STANDSTILL_THRSLD = 12;  // 0.375 kph

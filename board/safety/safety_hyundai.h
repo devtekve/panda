@@ -82,9 +82,6 @@ AddrCheckStruct hyundai_legacy_addr_checks[] = {
   HYUNDAI_SCC12_ADDR_CHECK(0)
 };
 
-
-const int HYUNDAI_PARAM_ESCC = 512;
-
 bool hyundai_legacy = false;
 bool hyundai_ev_gas_signal = false;
 bool hyundai_hybrid_gas_signal = false;
