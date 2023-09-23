@@ -218,7 +218,6 @@ class Panda:
   FLAG_HONDA_BOSCH_LONG = 2
   FLAG_HONDA_NIDEC_ALT = 4
   FLAG_HONDA_RADARLESS = 8
-  FLAG_HONDA_CLARITY = 16
 
   FLAG_HYUNDAI_EV_GAS = 1
   FLAG_HYUNDAI_HYBRID_GAS = 2
@@ -242,9 +241,6 @@ class Panda:
 
   FLAG_SUBARU_GEN2 = 1
   FLAG_SUBARU_LONG = 2
-  FLAG_SUBARU_MAX_STEER_IMPREZA_2018 = 4
-
-  FLAG_SUBARU_LEGACY_FLIP_DRIVER_TORQUE = 1
 
   FLAG_NISSAN_ALT_EPS_BUS = 1
 
@@ -253,8 +249,6 @@ class Panda:
 
   FLAG_FORD_LONG_CONTROL = 1
   FLAG_FORD_CANFD = 2
-
-  FLAG_TOYOTA_MADS_LTA_MSG = 1
 
   def __init__(self, serial: Optional[str] = None, claim: bool = True, disable_checks: bool = True):
     self._connect_serial = serial
