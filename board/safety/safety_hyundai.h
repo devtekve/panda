@@ -83,11 +83,6 @@ AddrCheckStruct hyundai_legacy_addr_checks[] = {
 };
 
 bool hyundai_legacy = false;
-bool hyundai_ev_gas_signal = false;
-bool hyundai_hybrid_gas_signal = false;
-bool hyundai_longitudinal = false;
-bool hyundai_escc = false;
-bool hyundai_fwd_aeb = false;
 
 addr_checks hyundai_rx_checks = SET_ADDR_CHECKS(hyundai_addr_checks);
 

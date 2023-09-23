@@ -26,6 +26,8 @@ bool hyundai_longitudinal = false;
 bool hyundai_camera_scc = false;
 bool hyundai_canfd_hda2 = false;
 bool hyundai_alt_limits = false;
+bool hyundai_escc = false;
+bool hyundai_fwd_aeb = false;
 uint8_t hyundai_last_button_interaction;  // button messages since the user pressed an enable button
 
 void hyundai_common_init(uint16_t param) {
