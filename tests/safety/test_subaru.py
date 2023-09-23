@@ -1,168 +1,229 @@
 #!/usr/bin/env python3
+import enum
 import unittest
-import numpy as np
 from panda import Panda
-from panda.tests.safety import libpandasafety_py
+from panda.tests.libpanda import libpanda_py
 import panda.tests.safety.common as common
-from panda.tests.safety.common import CANPackerPanda
+from panda.tests.safety.common import CANPackerPanda, MeasurementSafetyTest
+from functools import partial
 
-MAX_RATE_UP = 50
-MAX_RATE_DOWN = 70
-MAX_STEER = 2047
+class SubaruMsg(enum.IntEnum):
+  Brake_Status      = 0x13c
+  CruiseControl     = 0x240
+  Throttle          = 0x40
+  Steering_Torque   = 0x119
+  Wheel_Speeds      = 0x13a
+  ES_LKAS           = 0x122
+  ES_LKAS_ANGLE     = 0x124
+  ES_Brake          = 0x220
+  ES_Distance       = 0x221
+  ES_Status         = 0x222
+  ES_DashStatus     = 0x321
+  ES_LKAS_State     = 0x322
+  ES_Infotainment   = 0x323
+  ES_UDS_Request    = 0x787
+  ES_HighBeamAssist = 0x121
+  ES_STATIC_1       = 0x22a
+  ES_STATIC_2       = 0x325
 
-MAX_RT_DELTA = 940
-RT_INTERVAL = 250000
 
-DRIVER_TORQUE_ALLOWANCE = 60
-DRIVER_TORQUE_FACTOR = 10
+SUBARU_MAIN_BUS = 0
+SUBARU_ALT_BUS  = 1
+SUBARU_CAM_BUS  = 2
 
 
-class TestSubaruSafety(common.PandaSafetyTest):
-  cnt_gas = 0
-  cnt_torque_driver = 0
-  cnt_cruise = 0
-  cnt_speed = 0
-  cnt_brake = 0
+def lkas_tx_msgs(alt_bus, lkas_msg=SubaruMsg.ES_LKAS):
+  return [[lkas_msg,                    SUBARU_MAIN_BUS],
+          [SubaruMsg.ES_Distance,       alt_bus],
+          [SubaruMsg.ES_DashStatus,     SUBARU_MAIN_BUS],
+          [SubaruMsg.ES_LKAS_State,     SUBARU_MAIN_BUS],
+          [SubaruMsg.ES_Infotainment,   SUBARU_MAIN_BUS]]
 
-  TX_MSGS = [[0x122, 0], [0x221, 0], [0x322, 0]]
-  STANDSTILL_THRESHOLD = 20  # 1kph (see dbc file)
-  RELAY_MALFUNCTION_ADDR = 0x122
-  RELAY_MALFUNCTION_BUS = 0
-  FWD_BLACKLISTED_ADDRS = {2: [0x122, 0x221, 0x322]}
-  FWD_BUS_LOOKUP = {0: 2, 2: 0}
+def long_tx_msgs(alt_bus):
+  return [[SubaruMsg.ES_Brake,          alt_bus],
+          [SubaruMsg.ES_Status,         alt_bus]]
+
+def gen2_long_additional_tx_msgs():
+  return [[SubaruMsg.ES_UDS_Request,    SUBARU_CAM_BUS],
+          [SubaruMsg.ES_HighBeamAssist, SUBARU_MAIN_BUS],
+          [SubaruMsg.ES_STATIC_1,       SUBARU_MAIN_BUS],
+          [SubaruMsg.ES_STATIC_2,       SUBARU_MAIN_BUS]]
+
+def fwd_blacklisted_addr(lkas_msg=SubaruMsg.ES_LKAS):
+  return {SUBARU_CAM_BUS: [lkas_msg, SubaruMsg.ES_DashStatus, SubaruMsg.ES_LKAS_State, SubaruMsg.ES_Infotainment]}
+
+class TestSubaruSafetyBase(common.PandaSafetyTest, MeasurementSafetyTest):
+  FLAGS = 0
+  STANDSTILL_THRESHOLD = 0 # kph
+  RELAY_MALFUNCTION_ADDR = SubaruMsg.ES_LKAS
+  RELAY_MALFUNCTION_BUS = SUBARU_MAIN_BUS
+  FWD_BUS_LOOKUP = {SUBARU_MAIN_BUS: SUBARU_CAM_BUS, SUBARU_CAM_BUS: SUBARU_MAIN_BUS}
+  FWD_BLACKLISTED_ADDRS = fwd_blacklisted_addr()
+
+  MAX_RT_DELTA = 940
+  RT_INTERVAL = 250000
+
+  DRIVER_TORQUE_ALLOWANCE = 60
+  DRIVER_TORQUE_FACTOR = 50
+
+  ALT_MAIN_BUS = SUBARU_MAIN_BUS
+  ALT_CAM_BUS = SUBARU_CAM_BUS
+
+  DEG_TO_CAN = -100
+
+  INACTIVE_GAS = 1818
 
   def setUp(self):
     self.packer = CANPackerPanda("subaru_global_2017_generated")
-    self.safety = libpandasafety_py.libpandasafety
-    self.safety.set_safety_hooks(Panda.SAFETY_SUBARU, 0)
+    self.safety = libpanda_py.libpanda
+    self.safety.set_safety_hooks(Panda.SAFETY_SUBARU, self.FLAGS)
     self.safety.init_tests()
 
   def _set_prev_torque(self, t):
     self.safety.set_desired_torque_last(t)
     self.safety.set_rt_torque_last(t)
 
+  # TODO: this is unused
   def _torque_driver_msg(self, torque):
-    values = {"Steer_Torque_Sensor": torque, "Counter": self.cnt_torque_driver % 4}
-    self.__class__.cnt_torque_driver += 1
+    values = {"Steer_Torque_Sensor": torque}
     return self.packer.make_can_msg_panda("Steering_Torque", 0, values)
 
   def _speed_msg(self, speed):
-    # subaru safety doesn't use the scaled value, so undo the scaling
-    values = {s: speed * 0.057 for s in ["FR", "FL", "RR", "RL"]}
-    values["Counter"] = self.cnt_speed % 4
-    self.__class__.cnt_speed += 1
-    return self.packer.make_can_msg_panda("Wheel_Speeds", 0, values)
+    values = {s: speed for s in ["FR", "FL", "RR", "RL"]}
+    return self.packer.make_can_msg_panda("Wheel_Speeds", self.ALT_MAIN_BUS, values)
+
+  def _angle_meas_msg(self, angle):
+    values = {"Steering_Angle": angle}
+    return self.packer.make_can_msg_panda("Steering_Torque", 0, values)
 
   def _user_brake_msg(self, brake):
-    values = {"Brake": brake, "Counter": self.cnt_brake % 4}
-    self.__class__.cnt_brake += 1
-    return self.packer.make_can_msg_panda("Brake_Status", 0, values)
-
-  def _torque_msg(self, torque, steer_req=1):
-    values = {"LKAS_Output": torque}
-    return self.packer.make_can_msg_panda("ES_LKAS", 0, values)
+    values = {"Brake": brake}
+    return self.packer.make_can_msg_panda("Brake_Status", self.ALT_MAIN_BUS, values)
 
   def _user_gas_msg(self, gas):
-    values = {"Throttle_Pedal": gas, "Counter": self.cnt_gas % 4}
-    self.__class__.cnt_gas += 1
+    values = {"Throttle_Pedal": gas}
     return self.packer.make_can_msg_panda("Throttle", 0, values)
 
   def _pcm_status_msg(self, enable):
-    values = {"Cruise_Activated": enable, "Counter": self.cnt_cruise % 4}
-    self.__class__.cnt_cruise += 1
-    return self.packer.make_can_msg_panda("CruiseControl", 0, values)
+    values = {"Cruise_Activated": enable}
+    return self.packer.make_can_msg_panda("CruiseControl", self.ALT_MAIN_BUS, values)
 
-  def _set_torque_driver(self, min_t, max_t):
-    for _ in range(0, 5):
-      self._rx(self._torque_driver_msg(min_t))
-    self._rx(self._torque_driver_msg(max_t))
 
-  def test_steer_safety_check(self):
-    for enabled in [0, 1]:
-      for t in range(-3000, 3000):
-        self.safety.set_controls_allowed(enabled)
-        self._set_prev_torque(t)
-        block = abs(t) > MAX_STEER or (not enabled and abs(t) > 0)
-        self.assertEqual(not block, self._tx(self._torque_msg(t)))
+class TestSubaruStockLongitudinalSafetyBase(TestSubaruSafetyBase):
+  def _cancel_msg(self, cancel, cruise_throttle=0):
+    values = {"Cruise_Cancel": cancel, "Cruise_Throttle": cruise_throttle}
+    return self.packer.make_can_msg_panda("ES_Distance", self.ALT_MAIN_BUS, values)
 
-  def test_non_realtime_limit_up(self):
-    self._set_torque_driver(0, 0)
-    self.safety.set_controls_allowed(True)
+  def test_cancel_message(self):
+    # test that we can only send the cancel message (ES_Distance) with inactive throttle (1818) and Cruise_Cancel=1
+    for cancel in [True, False]:
+      self._generic_limit_safety_check(partial(self._cancel_msg, cancel), self.INACTIVE_GAS, self.INACTIVE_GAS, 0, 2**12, 1, self.INACTIVE_GAS, cancel)
 
-    self._set_prev_torque(0)
-    self.assertTrue(self._tx(self._torque_msg(MAX_RATE_UP)))
-    self._set_prev_torque(0)
-    self.assertTrue(self._tx(self._torque_msg(-MAX_RATE_UP)))
 
-    self._set_prev_torque(0)
-    self.assertFalse(self._tx(self._torque_msg(MAX_RATE_UP + 1)))
-    self.safety.set_controls_allowed(True)
-    self._set_prev_torque(0)
-    self.assertFalse(self._tx(self._torque_msg(-MAX_RATE_UP - 1)))
+class TestSubaruLongitudinalSafetyBase(TestSubaruSafetyBase, common.LongitudinalGasBrakeSafetyTest):
+  MIN_GAS = 808
+  MAX_GAS = 3400
+  INACTIVE_GAS = 1818
+  MAX_POSSIBLE_GAS = 2**12
 
-  def test_non_realtime_limit_down(self):
-    self._set_torque_driver(0, 0)
-    self.safety.set_controls_allowed(True)
+  MIN_BRAKE = 0
+  MAX_BRAKE = 600
+  MAX_POSSIBLE_BRAKE = 2**16
 
-  def test_against_torque_driver(self):
-    self.safety.set_controls_allowed(True)
+  MIN_RPM = 0
+  MAX_RPM = 2400
+  MAX_POSSIBLE_RPM = 2**12
 
-    for sign in [-1, 1]:
-      for t in np.arange(0, DRIVER_TORQUE_ALLOWANCE + 1, 1):
-        t *= -sign
-        self._set_torque_driver(t, t)
-        self._set_prev_torque(MAX_STEER * sign)
-        self.assertTrue(self._tx(self._torque_msg(MAX_STEER * sign)))
+  FWD_BLACKLISTED_ADDRS = {2: [SubaruMsg.ES_LKAS, SubaruMsg.ES_Brake, SubaruMsg.ES_Distance,
+                               SubaruMsg.ES_Status, SubaruMsg.ES_DashStatus,
+                               SubaruMsg.ES_LKAS_State, SubaruMsg.ES_Infotainment]}
 
-      self._set_torque_driver(DRIVER_TORQUE_ALLOWANCE + 1, DRIVER_TORQUE_ALLOWANCE + 1)
-      self.assertFalse(self._tx(self._torque_msg(-MAX_STEER)))
+  def test_rpm_safety_check(self):
+    self._generic_limit_safety_check(self._send_rpm_msg, self.MIN_RPM, self.MAX_RPM, 0, self.MAX_POSSIBLE_RPM, 1)
 
-    # arbitrary high driver torque to ensure max steer torque is allowed
-    max_driver_torque = int(MAX_STEER / DRIVER_TORQUE_FACTOR + DRIVER_TORQUE_ALLOWANCE + 1)
+  def _send_brake_msg(self, brake):
+    values = {"Brake_Pressure": brake}
+    return self.packer.make_can_msg_panda("ES_Brake", self.ALT_MAIN_BUS, values)
 
-    # spot check some individual cases
-    for sign in [-1, 1]:
-      driver_torque = (DRIVER_TORQUE_ALLOWANCE + 10) * sign
-      torque_desired = (MAX_STEER - 10 * DRIVER_TORQUE_FACTOR) * sign
-      delta = 1 * sign
-      self._set_prev_torque(torque_desired)
-      self._set_torque_driver(-driver_torque, -driver_torque)
-      self.assertTrue(self._tx(self._torque_msg(torque_desired)))
-      self._set_prev_torque(torque_desired + delta)
-      self._set_torque_driver(-driver_torque, -driver_torque)
-      self.assertFalse(self._tx(self._torque_msg(torque_desired + delta)))
+  def _send_gas_msg(self, gas):
+    values = {"Cruise_Throttle": gas}
+    return self.packer.make_can_msg_panda("ES_Distance", self.ALT_MAIN_BUS, values)
 
-      self._set_prev_torque(MAX_STEER * sign)
-      self._set_torque_driver(-max_driver_torque * sign, -max_driver_torque * sign)
-      self.assertTrue(self._tx(self._torque_msg((MAX_STEER - MAX_RATE_DOWN) * sign)))
-      self._set_prev_torque(MAX_STEER * sign)
-      self._set_torque_driver(-max_driver_torque * sign, -max_driver_torque * sign)
-      self.assertTrue(self._tx(self._torque_msg(0)))
-      self._set_prev_torque(MAX_STEER * sign)
-      self._set_torque_driver(-max_driver_torque * sign, -max_driver_torque * sign)
-      self.assertFalse(self._tx(self._torque_msg((MAX_STEER - MAX_RATE_DOWN + 1) * sign)))
+  def _send_rpm_msg(self, rpm):
+    values = {"Cruise_RPM": rpm}
+    return self.packer.make_can_msg_panda("ES_Status", self.ALT_MAIN_BUS, values)
 
-  def test_realtime_limits(self):
-    self.safety.set_controls_allowed(True)
 
-    for sign in [-1, 1]:
-      self.safety.init_tests()
-      self._set_prev_torque(0)
-      self._set_torque_driver(0, 0)
-      for t in np.arange(0, MAX_RT_DELTA, 1):
-        t *= sign
-        self.assertTrue(self._tx(self._torque_msg(t)))
-      self.assertFalse(self._tx(self._torque_msg(sign * (MAX_RT_DELTA + 1))))
+class TestSubaruTorqueSafetyBase(TestSubaruSafetyBase, common.DriverTorqueSteeringSafetyTest, common.SteerRequestCutSafetyTest):
+  MAX_RATE_UP = 50
+  MAX_RATE_DOWN = 70
+  MAX_TORQUE = 2047
 
-      self._set_prev_torque(0)
-      for t in np.arange(0, MAX_RT_DELTA, 1):
-        t *= sign
-        self.assertTrue(self._tx(self._torque_msg(t)))
+  # Safety around steering req bit
+  MIN_VALID_STEERING_FRAMES = 7
+  MAX_INVALID_STEERING_FRAMES = 1
+  MIN_VALID_STEERING_RT_INTERVAL = 144000
 
-      # Increase timer to update rt_torque_last
-      self.safety.set_timer(RT_INTERVAL + 1)
-      self.assertTrue(self._tx(self._torque_msg(sign * (MAX_RT_DELTA - 1))))
-      self.assertTrue(self._tx(self._torque_msg(sign * (MAX_RT_DELTA + 1))))
+  def _torque_cmd_msg(self, torque, steer_req=1):
+    values = {"LKAS_Output": torque, "LKAS_Request": steer_req}
+    return self.packer.make_can_msg_panda("ES_LKAS", SUBARU_MAIN_BUS, values)
+
+
+class TestSubaruGen1TorqueStockLongitudinalSafety(TestSubaruStockLongitudinalSafetyBase, TestSubaruTorqueSafetyBase):
+  FLAGS = 0
+  TX_MSGS = lkas_tx_msgs(SUBARU_MAIN_BUS)
+
+
+class TestSubaruGen2TorqueSafetyBase(TestSubaruTorqueSafetyBase):
+  ALT_MAIN_BUS = SUBARU_ALT_BUS
+  ALT_CAM_BUS = SUBARU_ALT_BUS
+
+  MAX_RATE_UP = 40
+  MAX_RATE_DOWN = 40
+  MAX_TORQUE = 1000
+
+
+class TestSubaruGen2TorqueStockLongitudinalSafety(TestSubaruStockLongitudinalSafetyBase, TestSubaruGen2TorqueSafetyBase):
+  FLAGS = Panda.FLAG_SUBARU_GEN2
+  TX_MSGS = lkas_tx_msgs(SUBARU_ALT_BUS)
+
+
+class TestSubaruGen1LongitudinalSafety(TestSubaruLongitudinalSafetyBase, TestSubaruTorqueSafetyBase):
+  FLAGS = Panda.FLAG_SUBARU_LONG
+  TX_MSGS = lkas_tx_msgs(SUBARU_MAIN_BUS) + long_tx_msgs(SUBARU_MAIN_BUS)
+
+
+class TestSubaruGen2LongitudinalSafety(TestSubaruLongitudinalSafetyBase, TestSubaruGen2TorqueSafetyBase):
+  FLAGS = Panda.FLAG_SUBARU_LONG | Panda.FLAG_SUBARU_GEN2
+  TX_MSGS = lkas_tx_msgs(SUBARU_ALT_BUS) + long_tx_msgs(SUBARU_ALT_BUS) + gen2_long_additional_tx_msgs()
+
+  def _rdbi_msg(self, did: int):
+    return b'\x03\x22' + did.to_bytes(2) + b'\x00\x00\x00\x00'
+
+  def _es_uds_msg(self, msg: bytes):
+    return libpanda_py.make_CANPacket(SubaruMsg.ES_UDS_Request, 2, msg)
+
+  def test_es_uds_message(self):
+    tester_present = b'\x02\x3E\x80\x00\x00\x00\x00\x00'
+    not_tester_present = b"\x03\xAA\xAA\x00\x00\x00\x00\x00"
+
+    button_did = 0x1130
+
+    # Tester present is allowed for gen2 long to keep eyesight disabled
+    self.assertTrue(self._tx(self._es_uds_msg(tester_present)))
+
+    # Non-Tester present is not allowed
+    self.assertFalse(self._tx(self._es_uds_msg(not_tester_present)))
+
+    # Only button_did is allowed to be read via UDS
+    for did in range(0xFFFF):
+      should_tx = (did == button_did)
+      self.assertEqual(self._tx(self._es_uds_msg(self._rdbi_msg(did))), should_tx)
+
+    # any other msg is not allowed
+    for sid in range(0xFF):
+      msg = b'\x03' + sid.to_bytes(1) + b'\x00' * 6
+      self.assertFalse(self._tx(self._es_uds_msg(msg)))
 
 
 if __name__ == "__main__":

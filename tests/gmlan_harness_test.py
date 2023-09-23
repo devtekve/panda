@@ -1,29 +1,26 @@
 #!/usr/bin/env python3
 
-import os
-import sys
 import time
 
-sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), ".."))
-from panda import Panda  # noqa: E402
+from panda import Panda
 
 WHITE_GMLAN_BUS = 3
 OTHER_GMLAN_BUS = 1
 
 def set_gmlan(p):
-  if p.is_white():
+  if p.get_type() == Panda.HW_TYPE_WHITE_PANDA:
     p.set_gmlan(2)
   else:
     p.set_obd(True)
 
 def set_speed_kbps(p, speed):
-  if p.is_white():
+  if p.get_type() == Panda.HW_TYPE_WHITE_PANDA:
     p.set_can_speed_kbps(WHITE_GMLAN_BUS, speed)
   else:
     p.set_can_speed_kbps(OTHER_GMLAN_BUS, speed)
 
 def send(p, id_, msg):
-  if p.is_white():
+  if p.get_type() == Panda.HW_TYPE_WHITE_PANDA:
     p.can_send(id_, msg, WHITE_GMLAN_BUS)
   else:
     p.can_send(id_, msg, OTHER_GMLAN_BUS)

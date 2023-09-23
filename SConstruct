@@ -1,8 +1,12 @@
-AddOption('--test',
+AddOption('--minimal',
+          action='store_false',
+          dest='extras',
+          default=True,
+          help='the minimum build. no tests, tools, etc.')
+
+AddOption('--ubsan',
           action='store_true',
-          help='build test files')
+          help='turn on UBSan')
 
-SConscript('board/SConscript')
-
-if GetOption('test'):
-  SConscript('tests/safety/SConscript')
+# panda fw & test files
+SConscript('SConscript')

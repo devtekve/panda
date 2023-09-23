@@ -1,25 +1,41 @@
 # Welcome to panda
 
+![panda tests](https://github.com/commaai/panda/workflows/tests/badge.svg)
+![panda drivers](https://github.com/commaai/panda/workflows/drivers/badge.svg)
+
 [panda](http://github.com/commaai/panda) is the nicest universal car interface ever.
 
 <a href="https://comma.ai/shop/products/panda-obd-ii-dongle"><img src="https://github.com/commaai/panda/blob/master/panda.png?raw=true"></a>
 
-It supports 3x CAN, 2x LIN, and 1x GMLAN. It also charges a phone. On the computer side, it has USB.
-
-It uses an [STM32F413](http://www.st.com/en/microcontrollers/stm32f413-423.html?querycriteria=productId=LN2004).
-
-It is 2nd gen hardware, reusing code and parts from the [NEO](https://github.com/commaai/neo) interface board.
-
-![panda tests](https://github.com/commaai/panda/workflows/tests/badge.svg)
-![panda drivers](https://github.com/commaai/panda/workflows/drivers/badge.svg)
+panda speaks CAN, CAN FD, LIN, and GMLAN. panda supports [STM32F205](https://www.st.com/resource/en/reference_manual/rm0033-stm32f205xx-stm32f207xx-stm32f215xx-and-stm32f217xx-advanced-armbased-32bit-mcus-stmicroelectronics.pdf), [STM32F413](https://www.st.com/resource/en/reference_manual/rm0430-stm32f413423-advanced-armbased-32bit-mcus-stmicroelectronics.pdf), and [STM32H725](https://www.st.com/resource/en/reference_manual/rm0468-stm32h723733-stm32h725735-and-stm32h730-value-line-advanced-armbased-32bit-mcus-stmicroelectronics.pdf).
 
 ## Usage
 
-### Python
+Setup dependencies:
+```bash
+# Ubuntu
+sudo apt-get install dfu-util gcc-arm-none-eabi python3-pip libffi-dev git
+```
+```bash
+# macOS
+brew install --cask gcc-arm-embedded
+brew install python3 dfu-util gcc@13
+```
 
-To install the library:
+Clone panda repository:
 ``` bash
-pip install pandacan
+git clone https://github.com/commaai/panda.git
+cd panda
+```
+
+Install requirements:
+```bash
+pip install -r requirements.txt
+```
+
+Install library:
+``` bash
+python setup.py install
 ```
 
 See [the Panda class](https://github.com/commaai/panda/blob/master/python/__init__.py) for how to interact with the panda.
@@ -45,16 +61,12 @@ sudo udevadm control --reload-rules && sudo udevadm trigger
 
 The panda jungle uses different udev rules. See [the repo](https://github.com/commaai/panda_jungle#udev-rules) for instructions. 
 
-### JavaScript
-
-See [PandaJS](https://github.com/commaai/pandajs)
-
-
 ## Software interface support
 
 As a universal car interface, it should support every reasonable software interface.
 
-- [User space](https://github.com/commaai/panda/tree/master/python)
+- [Python library](https://github.com/commaai/panda/tree/master/python)
+- [C++ library](https://github.com/commaai/openpilot/tree/master/selfdrive/boardd)
 - [socketcan in kernel](https://github.com/commaai/panda/tree/master/drivers/linux) (alpha)
 - [Windows J2534](https://github.com/commaai/panda/tree/master/drivers/windows)
 
@@ -85,7 +97,7 @@ Safety modes optionally supports `controls_allowed`, which allows or blocks a su
 ## Code Rigor
 
 The panda firmware is written for its use in conjuction with [openpilot](https://github.com/commaai/openpilot). The panda firmware, through its safety model, provides and enforces the
-[openpilot safety](https://github.com/commaai/openpilot/blob/devel/SAFETY.md). Due to its critical function, it's important that the application code rigor within the `board` folder is held to high standards.
+[openpilot safety](https://github.com/commaai/openpilot/blob/master/docs/SAFETY.md). Due to its critical function, it's important that the application code rigor within the `board` folder is held to high standards.
 
 These are the [CI regression tests](https://github.com/commaai/panda/actions) we have in place:
 * A generic static code analysis is performed by [cppcheck](https://github.com/danmar/cppcheck/).
@@ -98,7 +110,7 @@ to ensure that the behavior remains unchanged.
     * compiling the code and flashing it through USB.
     * receiving, sending, and forwarding CAN messages on all buses, over USB.
 
-In addition, we run the [pylint](https://www.pylint.org/) and [flake8](https://github.com/PyCQA/flake8) linters on all python files within the panda repo.
+In addition, we run the [ruff linter](https://github.com/astral-sh/ruff) on all python files within the panda repo.
 
 ## Hardware
 

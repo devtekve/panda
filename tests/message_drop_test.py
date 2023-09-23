@@ -5,18 +5,18 @@ import time
 import struct
 import itertools
 import threading
-from typing import Any, List
+from typing import Any, Union, List
 
 from panda import Panda
 
 JUNGLE = "JUNGLE" in os.environ
 if JUNGLE:
-  from panda_jungle import PandaJungle # pylint: disable=import-error
+  from panda import PandaJungle
 
 # Generate unique messages
 NUM_MESSAGES_PER_BUS = 10000
 messages = [bytes(struct.pack("Q", i)) for i in range(NUM_MESSAGES_PER_BUS)]
-tx_messages = list(itertools.chain.from_iterable(map(lambda msg: [[0xaa, None, msg, 0], [0xaa, None, msg, 1], [0xaa, None, msg, 2]], messages)))
+tx_messages = list(itertools.chain.from_iterable(([[0xaa, None, msg, 0], [0xaa, None, msg, 1], [0xaa, None, msg, 2]] for msg in messages)))
 
 def flood_tx(panda):
   print('Sending!')
@@ -35,6 +35,7 @@ def flood_tx(panda):
 
 if __name__ == "__main__":
   serials = Panda.list()
+  receiver: Union[Panda, PandaJungle]
   if JUNGLE:
     sender = Panda()
     receiver = PandaJungle()
@@ -46,7 +47,6 @@ if __name__ == "__main__":
     receiver.set_safety_mode(Panda.SAFETY_ALLOUTPUT)
 
   sender.set_safety_mode(Panda.SAFETY_ALLOUTPUT)
-  sender.set_heartbeat_disabled()
 
   # Start transmisson
   threading.Thread(target=flood_tx, args=(sender,)).start()
@@ -65,6 +65,6 @@ if __name__ == "__main__":
 
   # Check if we received everything
   for bus in range(3):
-    received_msgs = set(map(lambda m: bytes(m[2]), filter(lambda m, b=bus: m[3] == b, rx))) # type: ignore
+    received_msgs = {bytes(m[2]) for m in filter(lambda m, b=bus: m[3] == b, rx)} # type: ignore
     dropped_msgs = set(messages).difference(received_msgs)
     print(f"Bus {bus} dropped msgs: {len(list(dropped_msgs))} / {len(messages)}")
