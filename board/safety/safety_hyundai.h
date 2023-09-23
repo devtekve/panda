@@ -205,7 +205,7 @@ static int hyundai_rx_hook(CANPacket_t *to_push) {
       }
     } else {
       if (addr == 0x420) {
-        acc_main_on = GET_BYTES_04(to_push) & 0x1; // ACC MAIN_ON signal
+        acc_main_on = GET_BYTES(to_push, 0, 1) & 0x1; // ACC MAIN_ON signal
         if (acc_main_on && ((alternative_experience & ALT_EXP_ENABLE_MADS) || (alternative_experience & ALT_EXP_MADS_DISABLE_DISENGAGE_LATERAL_ON_BRAKE))) {
           controls_allowed = true;
         }
@@ -213,7 +213,7 @@ static int hyundai_rx_hook(CANPacket_t *to_push) {
     }
 
     if (addr == 0x391) {
-      bool lfa_pressed = (GET_BYTES_04(to_push) >> 4) & 0x1; // LFA_PRESSED signal
+      bool lfa_pressed = (GET_BYTES(to_push, 0, 1) >> 4) & 0x1; // LFA_PRESSED signal
       if (lfa_pressed && ((alternative_experience & ALT_EXP_ENABLE_MADS) || (alternative_experience & ALT_EXP_MADS_DISABLE_DISENGAGE_LATERAL_ON_BRAKE))) {
         controls_allowed = true;
       }
@@ -223,78 +223,8 @@ static int hyundai_rx_hook(CANPacket_t *to_push) {
     if (addr == 0x4F1) {
       int cruise_button = GET_BYTE(to_push, 0) & 0x7U;
       int main_button = GET_BIT(to_push, 3U);
-      //TODO: hyundai_common_cruise_buttons_check(cruise_button, main_button); // THis is what we should do, nut we meed to ensue controls_allowed_long is set there too!
-
-      if ((cruise_button == HYUNDAI_BTN_RESUME) || (cruise_button == HYUNDAI_BTN_SET) || (cruise_button == HYUNDAI_BTN_CANCEL) || (main_button != 0)) {
-        hyundai_last_button_interaction = 0U;
-      } else {
-        hyundai_last_button_interaction = MIN(hyundai_last_button_interaction + 1U, HYUNDAI_PREV_BUTTON_SAMPLES);
-      }
-
-      if (hyundai_longitudinal) {
-        // exit controls on cancel press
-        if (cruise_button == HYUNDAI_BTN_CANCEL) {
-          controls_allowed = false; 
-          controls_allowed_long = false; //Added from sunny 
-        }
-       
-
-        // enter controls on falling edge of resume or set
-        bool set = (cruise_button == HYUNDAI_BTN_NONE) && (cruise_button_prev == HYUNDAI_BTN_SET);
-        bool res = (cruise_button == HYUNDAI_BTN_NONE) && (cruise_button_prev == HYUNDAI_BTN_RESUME);
-        if (set || res) {
-          controls_allowed = true;
-          controls_allowed_long = true; // added from sunny
-        }
-
-        cruise_button_prev = cruise_button;
-      }
+      hyundai_common_cruise_buttons_check(cruise_button, main_button);
     }
-    //TODO: hyundai_common_cruise_buttons_check(cruise_button, main_button); // THis is what we should do, nut we meed to ensue controls_allowed_long is set there too! ^^^^^^^^^^
-    
-    //TODO: below seems to be completely custom for some reason! I don't know what it is 100%
-    if (hyundai_longitudinal) {
-      if (addr == 0x4F1) {
-        acc_main_on = GET_BIT(to_push, 3U); // CF_CLU_CRUISESWMAIN signal
-        int main_enabled = false;
-        if (acc_main_on && !acc_main_on_prev) {
-          main_enabled = !main_enabled;
-          if (!main_enabled) {
-            disengageFromBrakes = false;
-            controls_allowed = false;
-            controls_allowed_long = false;
-          }
-        }
-        acc_main_on_prev = acc_main_on;
-      }
-    } else {
-      if (addr == 0x420) {
-        acc_main_on = GET_BYTES_04(to_push) & 0x1; // ACC MAIN_ON signal
-        if (!acc_main_on) {
-          disengageFromBrakes = false;
-          controls_allowed = false;
-          controls_allowed_long = false; // this is sunny
-          }
-        }
-      }
-    //TODO: above seems to be completely custom for some reason! I don't know what it is 100% ^^^^^^^
-
-    //TODO: BELOW SEEMS TO BE PART OF hyundai_common_cruise_state_check
-    // enter controls on rising edge of ACC and user button press, exit controls when ACC off
-    if (!hyundai_longitudinal && (addr == 0x421)) {
-      // 2 bits: 13-14
-      int cruise_engaged = (GET_BYTES_04(to_push) >> 13) & 0x3U;
-      if (cruise_engaged && !cruise_engaged_prev && (hyundai_last_button_interaction < HYUNDAI_PREV_BUTTON_SAMPLES)) {
-        controls_allowed = true;
-        controls_allowed_long = true;
-      }
-
-      if (!cruise_engaged) {
-        controls_allowed_long = false;
-      }
-      cruise_engaged_prev = cruise_engaged;
-    }
-    //TODO: ABOVE SEEMS TO BE PART OF hyundai_common_cruise_state_check
 
     // gas press, different for EV, hybrid, and ICE models
     if ((addr == 0x371) && hyundai_ev_gas_signal) {

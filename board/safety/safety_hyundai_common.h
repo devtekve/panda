@@ -51,10 +51,11 @@ void hyundai_common_cruise_state_check(const int cruise_engaged) {
   if (!hyundai_longitudinal) {
     if (cruise_engaged && !cruise_engaged_prev && (hyundai_last_button_interaction < HYUNDAI_PREV_BUTTON_SAMPLES)) {
       controls_allowed = true;
+      controls_allowed_long = true;
     }
 
     if (!cruise_engaged) {
-      controls_allowed = false;
+      controls_allowed_long = false;
     }
     cruise_engaged_prev = cruise_engaged;
   }
@@ -70,17 +71,27 @@ void hyundai_common_cruise_buttons_check(const int cruise_button, const int main
 
   if (hyundai_longitudinal) {
     // enter controls on falling edge of resume or set
-    bool set = (cruise_button != HYUNDAI_BTN_SET) && (cruise_button_prev == HYUNDAI_BTN_SET);
-    bool res = (cruise_button != HYUNDAI_BTN_RESUME) && (cruise_button_prev == HYUNDAI_BTN_RESUME);
+    bool set = (cruise_button == HYUNDAI_BTN_NONE) && (cruise_button_prev == HYUNDAI_BTN_SET);
+    bool res = (cruise_button == HYUNDAI_BTN_NONE) && (cruise_button_prev == HYUNDAI_BTN_RESUME);
     if (set || res) {
       controls_allowed = true;
+      controls_allowed_long = true;
     }
 
     // exit controls on cancel press
     if (cruise_button == HYUNDAI_BTN_CANCEL) {
       controls_allowed = false;
+      controls_allowed_long = false; 
+    }
+    
+    // Disengage because of cycling the cruise button ?
+    if (!main_button && !acc_main_on_prev) {
+        disengageFromBrakes = false;
+        controls_allowed = false;
+        controls_allowed_long = false;
     }
 
+    acc_main_on_prev = main_button;
     cruise_button_prev = cruise_button;
   }
 }
